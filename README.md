@@ -1,7 +1,14 @@
-# Indian Equity Analyzer
+# BSK Stock Analyser — Indian Equity Intelligence
 
-A **data-driven Indian (NSE) equity research & investment decision-support tool** — not a
-"stock prediction" gimmick. It fetches live price history **and fundamentals**, computes
+**BSK Stock Analyser** is a **data-driven Indian (NSE & BSE) equity research & investment
+decision-support tool** — not a "stock prediction" gimmick.
+
+The UI is a bespoke design system (custom logo + hand-built SVG icon set, no emoji;
+Sora / Inter / JetBrains Mono type; emerald-on-carbon palette with a gold signal accent),
+with **light & dark themes**, a **circular score gauge**, and full **keyboard + screen-reader
+accessibility** (ARIA tabs/combobox, skip link, reduced-motion support). Verified with an
+automated Playwright + axe-core audit: **0 accessibility violations** across landing and
+dashboard in both themes, responsive at 375 / 768 / 1280 px. It fetches live price history **and fundamentals**, computes
 technical / trend / risk / valuation metrics deterministically, and produces a
 **transparent, weighted score** with an explicit decision, confidence and data-quality
 reading.
@@ -46,10 +53,11 @@ as **unavailable** rather than being invented.
 The app is built to be honest about what it can and can't know.
 
 ### What works on Vercel (with the `/api` functions)
-- **Search / analyze any listed stock** — a curated shortlist powers autocomplete, but you
-  can analyze **any NSE symbol** (typed directly) or **any BSE scrip code** (numeric, e.g.
-  `500325`). Data is fetched live per-symbol; NSE is tried first with an automatic BSE
-  fallback, so you are not limited to the shortlist.
+- **Search by company name** (live) — type "reliance", "hdfc", "infosys" and pick from real
+  listed matches via `/api/search` (Yahoo symbol directory), each tagged **NSE** or **BSE**
+  so same-name dual listings are disambiguated by what you click. You can still type an exact
+  NSE symbol or BSE scrip code (`500325`) directly; NSE is tried first with an automatic BSE
+  fallback. No memorizing or copy-pasting codes.
 - **Live price & volume history** via `/api/history` (Yahoo Finance, delayed).
 - **Technical analysis** — SMA 20/50/100/200, EMA 20/50, RSI 14, MACD, Bollinger, ATR,
   ADX, volume signals, 52-week high/low, golden/death cross.
@@ -93,15 +101,17 @@ being fabricated.
 stock-analyzer/
 ├── index.html · css/styles.css        static frontend (no build step)
 ├── js/
-│   ├── stocks.js       search universe, sector map, Yahoo ticker mapping
+│   ├── stocks.js       search universe, sector map, NSE/BSE ticker resolution
 │   ├── providers.js    provider layer: tries /api first, falls back to CORS relays + cache
 │   ├── indicators.js   deterministic math (+ self-test)
 │   ├── analysis.js     technical/trend/risk + fundamental scorers + decision + red flags
 │   ├── charts.js       Chart.js wrappers
-│   └── app.js          orchestration + rendering + watchlist
+│   ├── icons.js        hand-built SVG icon set + brand logo mark + favicon
+│   └── app.js          orchestration + rendering + theming + a11y + watchlist
 ├── api/                Vercel serverless functions (Node)
 │   ├── history.js      server proxy → Yahoo v8/chart (kills the CORS-relay dependency)
-│   └── quote.js        server proxy → Yahoo quoteSummary (fundamentals, crumb handshake)
+│   ├── quote.js        server proxy → Yahoo quoteSummary (fundamentals, crumb handshake)
+│   └── search.js       server proxy → Yahoo symbol search (search by company name)
 └── vercel.json
 ```
 
@@ -139,6 +149,26 @@ npx vercel dev      # runs the static site AND the /api functions locally
 python3 -m http.server 8000
 ```
 Open the browser console to see the indicator self-test on load.
+
+## Documentation
+
+Full maintainer & developer guide — architecture, a file-by-file reference, the scoring
+engine, and step-by-step "how to change X" recipes — is in
+**[DOCUMENTATION.md](DOCUMENTATION.md)**. Read that before making changes.
+
+## Tests
+
+A functional + accessibility suite lives in [`tests/`](tests/). It runs **offline** —
+it serves the app locally and mocks the network layer (Yahoo / `/api` + Chart.js) with
+Playwright, then drives the real app end-to-end and runs an axe-core audit.
+
+```bash
+cd tests && npm install && npm test   # 39 checks; exits non-zero on failure
+```
+
+Covers search, the full analysis render, all tabs, charts, watchlist & theme persistence,
+BSE fallback, the error path (no fabricated data), and accessibility. Excluded from the
+Vercel deployment via `.vercelignore`.
 
 ## Notes & limitations
 - Yahoo’s fundamentals (crumb) handshake changes often; `api/quote.js` degrades honestly to
