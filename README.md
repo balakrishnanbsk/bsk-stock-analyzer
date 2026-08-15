@@ -53,6 +53,13 @@ as **unavailable** rather than being invented.
 The app is built to be honest about what it can and can't know.
 
 ### What works on Vercel (with the `/api` functions)
+- **Markets home page** — on load, a dashboard computed from the tracked universe via
+  `/api/movers`: **top gainers, top losers, most-active (by value & by volume), volume
+  shockers, most valuable (by m-cap), near 52-week high / low, trending sectors**, a
+  **market-breadth** bar (advances vs declines), a **market open/closed** badge, a NIFTY 50
+  / SENSEX strip and a **refresh** button. The **watchlist shows live prices** here. Click
+  any row to analyse that stock; click the logo to return. (Honest "unavailable" card on
+  static hosting.)
 - **Search by company name** (live) — type "reliance", "hdfc", "infosys" and pick from real
   listed matches via `/api/search` (Yahoo symbol directory), each tagged **NSE** or **BSE**
   so same-name dual listings are disambiguated by what you click. You can still type an exact
@@ -69,8 +76,18 @@ The app is built to be honest about what it can and can't know.
 - **Fundamentals** via `/api/quote` — valuation (P/E, forward P/E, P/B, PEG, P/S,
   EV/EBITDA, dividend yield, market cap), profitability (ROE, ROA, margins), growth
   (revenue/earnings), financial health (D/E, current ratio, cash vs debt, FCF).
+- **Financials** via `/api/financials` — Profit & Loss, Balance Sheet and Cash Flow
+  (annual **and** quarterly, ~4 periods) with a revenue/profit trend chart. Lazy-loaded
+  when the Financials tab is opened.
+- **Peer comparison** via `/api/peers` — same-sector peers compared on growth, ROE,
+  margin, D/E, P/E, EV/EBITDA, dividend yield, with best-in-column highlights and a
+  composite peer **rank**.
 - **Transparent scoring** + decision engine + red-flag engine + confidence & data-quality.
 - **Watchlist** (localStorage) and **interactive charts**.
+- **Optional Google sign-in + sync** — sign in with Google to sync your watchlist &
+  theme to your *own* Google Drive (hidden app-data folder). **No database, no client
+  secret.** Disabled until you add a Google OAuth **Web client ID** in `js/config.js`
+  (see the setup steps in that file); the app works fully without it.
 
 ### Still marked "unavailable" (need further integrations)
 - **News & sentiment** — needs a news API / RSS aggregation on the backend.
@@ -107,11 +124,16 @@ stock-analyzer/
 │   ├── analysis.js     technical/trend/risk + fundamental scorers + decision + red flags
 │   ├── charts.js       Chart.js wrappers
 │   ├── icons.js        hand-built SVG icon set + brand logo mark + favicon
+│   ├── config.js       GOOGLE_CLIENT_ID (optional Google sign-in) + setup notes
+│   ├── gsync.js        optional Google sign-in + sync to the user's Google Drive
 │   └── app.js          orchestration + rendering + theming + a11y + watchlist
 ├── api/                Vercel serverless functions (Node)
 │   ├── history.js      server proxy → Yahoo v8/chart (kills the CORS-relay dependency)
 │   ├── quote.js        server proxy → Yahoo quoteSummary (fundamentals, crumb handshake)
-│   └── search.js       server proxy → Yahoo symbol search (search by company name)
+│   ├── search.js       server proxy → Yahoo symbol search (search by company name)
+│   ├── movers.js       server proxy → Yahoo v7/quote batch (home-page market movers)
+│   ├── financials.js   server proxy → Yahoo statement modules (P&L/BS/CF, annual+qtr)
+│   └── peers.js        server proxy → batch quoteSummary (peer comparison)
 └── vercel.json
 ```
 
@@ -163,7 +185,7 @@ it serves the app locally and mocks the network layer (Yahoo / `/api` + Chart.js
 Playwright, then drives the real app end-to-end and runs an axe-core audit.
 
 ```bash
-cd tests && npm install && npm test   # 39 checks; exits non-zero on failure
+cd tests && npm install && npm test   # 70 checks; exits non-zero on failure
 ```
 
 Covers search, the full analysis render, all tabs, charts, watchlist & theme persistence,

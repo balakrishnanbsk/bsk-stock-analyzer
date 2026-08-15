@@ -121,11 +121,16 @@ stock-analyzer/
 │   ├── analysis.js     # technical/trend/risk + scoring + decision + red-flag engines
 │   ├── charts.js       # Chart.js wrappers (price / volume / RSI / score)
 │   ├── icons.js        # hand-built SVG icon set + logo mark + favicon
-│   └── app.js          # orchestration, rendering, theming, a11y, watchlist
+│   ├── config.js       # GOOGLE_CLIENT_ID for optional Google sign-in (+ setup notes)
+│   ├── gsync.js        # optional Google sign-in + sync to the user's Google Drive appData
+│   └── app.js          # orchestration, rendering, theming, a11y, watchlist, account UI
 ├── api/                # Vercel serverless functions (Node)
 │   ├── history.js      # proxy → Yahoo v8/chart
 │   ├── quote.js        # proxy → Yahoo quoteSummary (fundamentals; crumb handshake)
-│   └── search.js       # proxy → Yahoo symbol search (search by company name)
+│   ├── search.js       # proxy → Yahoo symbol search (search by company name)
+│   ├── movers.js       # proxy → Yahoo v7/quote batch (home-page market movers)
+│   ├── financials.js   # proxy → Yahoo statement modules (P&L/BS/CF, annual + quarterly)
+│   └── peers.js        # proxy → batch quoteSummary fundamentals (peer comparison)
 ├── tests/              # Playwright + axe-core suite (npm test) — NOT deployed
 ├── vercel.json         # Vercel config (clean URLs, function limits, CORS header)
 ├── .vercelignore       # keeps tests/ + node_modules out of the deploy
@@ -172,9 +177,13 @@ plus `round()` and `_selfTest()` (runs on load; logs to console).
 - `redFlags({...})` — price/volatility flags + the "not assessable" list.
 
 ### `js/app.js`
-Boot (`setupChrome` injects logo/icons/theme), `wireSearch` (debounced live search +
-ARIA), `wireTabs` (ARIA + keyboard), `runAnalysis` (the orchestrator), `renderAll` +
-`render*` panel builders, `gaugeSVG`, watchlist (localStorage), helpers. Also a guarded
+Boot (`setupChrome` injects logo/icons/theme, wires the brand→home click), `wireSearch`
+(debounced live search + ARIA), `wireTabs` (ARIA + keyboard), `runAnalysis` (the
+orchestrator, with a `loading` lock so a second analysis can't race the first),
+`renderAll` + `render*` panel builders, `gaugeSVG`, watchlist (localStorage), helpers.
+The **Markets home** lives here too: `loadHome` → `getMovers` + `loadIndices`,
+`computeScreens` (gainers / losers / most-active / volume-shockers / sector averages),
+`renderHome`, and `showHome`/`hideHome` toggling `#home` vs `#result`. Also a guarded
 `?e2e=1` test seam that exposes `renderAll`/`setCurrent`.
 
 ### `css/styles.css`, `js/icons.js`, `api/*` — see [§9](#9-design-system--theming) and [§8](#8-serverless-api-reference).
@@ -224,7 +233,11 @@ confidence  = max(20, round(dataQuality × 0.9))   # never overstates certainty
 { s: 'TATAPOWER', n: 'Tata Power', sector: 'ENERGY', industry: 'Power Utility' },
 ```
 `s` = NSE symbol, `sector` must be a key of `SECTORS`. (Reminder: users can already
-analyse *any* symbol by typing it — the shortlist is just convenience.)
+analyse *any* symbol by typing it — the shortlist is just convenience.) **`STOCK_UNIVERSE`
+is also the pool the Markets home page scans** for gainers/losers/most-active/shockers and
+sector trends, so adding names here widens the home dashboard too. To make the home page
+cover the whole market, replace this list with a fuller NSE symbol list (mind the
+`/api/movers` batch size — it caps at 150 symbols per call).
 
 ### Add a new sector
 `js/stocks.js` → add to `SECTORS` (e.g. `REALTY: 'Real Estate'`). Optionally add a
@@ -284,6 +297,20 @@ Fonts: change the `<link>` in `index.html` and the font-family stacks in the CSS
 filled) and call `icon('name')`. The logo is `logoMark()`; the favicon is
 `faviconDataUri()` — keep them visually in sync.
 
+### Enable Google sign-in & Drive sync (optional)
+Paste a Google OAuth **Web** client ID into `js/config.js` → `GOOGLE_CLIENT_ID`. That's it
+— the "Sign in" button appears and syncing turns on. Setup steps are in the comment at the
+top of `config.js` (enable Google Drive API; add scopes openid/email/profile/`drive.appdata`;
+add your origin to the client's Authorized JavaScript origins). How it works:
+- `js/gsync.js` uses the browser-only **GIS token flow** (no client secret) to get a
+  short-lived access token, then reads/writes **one JSON file** in the Drive
+  `appDataFolder` (hidden, private to this app). It only touches the watchlist + theme.
+- `app.js` renders the account button/menu (`renderAccount`), and on sign-in runs
+  `onGoogleSignedIn`: pull remote → `mergeData` (unions watchlists, newer theme wins) →
+  apply locally → push back. Local changes (`setWL`, theme toggle) call `schedulePush`
+  (debounced). Nothing else leaves the browser, and there is **no database**.
+- To sync more keys, extend `getLocalData()`/`mergeData()` in `app.js`/`gsync.js`.
+
 ---
 
 ## 8. Serverless API reference
@@ -296,6 +323,9 @@ All three live in `api/`, run on Vercel's Node runtime, only read public endpoin
 | `GET /api/history` | `symbol` (RELIANCE / 500325 / ^NSEI / RELIANCE.NS), `range`, `interval` | Yahoo v8/chart JSON (passthrough) |
 | `GET /api/quote` | `symbol` | `{available:true, valuation, profitability, growth, health, …}` or `{available:false, reason}` |
 | `GET /api/search` | `q` | `{ quotes: [...] }` (Yahoo symbol search passthrough) |
+| `GET /api/movers` | `symbols` (comma-separated `.NS`/`.BO` list) | `{available:true, quotes:[{symbol, price, changePct, volume, avgVolume, high52, low52, marketCap}]}` or `{available:false, reason}` — the home page derives gainers/losers/most-active(value&volume)/shockers/most-valuable/near-52w-high/low/sectors/breadth from this |
+| `GET /api/financials` | `symbol` | `{available:true, annual:{income,balance,cash}, quarterly:{…}, earnings:{yearly,quarterly}}` or `{available:false, reason}` — P&L/BS/CF line items per period (lazy, Financials tab) |
+| `GET /api/peers` | `symbols` (≤8, comma-separated) | `{available:true, peers:[{symbol, name, valuation, profitability, growth, health}]}` or `{available:false, reason}` — batch fundamentals for the peer table (lazy, Peers tab) |
 
 `api/quote.js` performs Yahoo's cookie→crumb handshake; Yahoo changes this periodically,
 so it may return `available:false` — that's expected and handled.
@@ -336,7 +366,7 @@ Preserve these when editing (the test suite checks them):
 ```bash
 cd tests
 npm install     # Playwright + axe-core + Chart.js; downloads Chromium (postinstall)
-npm test        # 39 checks; non-zero exit on failure
+npm test        # 70 checks; non-zero exit on failure
 # or, with a pre-installed browser:
 PW_EXECUTABLE=/path/to/chrome npm test
 ```
